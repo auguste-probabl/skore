@@ -1055,6 +1055,7 @@ class _MetricsAccessor(_BaseAccessor["CrossValidationReport"], DirNamesMixin):
 
         Examples
         --------
+        >>> import matplotlib.pyplot as plt
         >>> from sklearn.datasets import load_breast_cancer
         >>> from sklearn.linear_model import LogisticRegression
         >>> from skore import CrossValidationReport
@@ -1063,6 +1064,7 @@ class _MetricsAccessor(_BaseAccessor["CrossValidationReport"], DirNamesMixin):
         >>> report = CrossValidationReport(classifier, X=X, y=y, cv_splitter=2)
         >>> display = report.metrics.roc()
         >>> display.plot(roc_curve_kwargs={"color": "tab:red"})
+        >>> plt.close()
         """
         response_method = ("predict_proba", "decision_function")
         display_kwargs = {"pos_label": pos_label}
@@ -1104,6 +1106,7 @@ class _MetricsAccessor(_BaseAccessor["CrossValidationReport"], DirNamesMixin):
 
         Examples
         --------
+        >>> import matplotlib.pyplot as plt
         >>> from sklearn.datasets import load_breast_cancer
         >>> from sklearn.linear_model import LogisticRegression
         >>> from skore import CrossValidationReport
@@ -1112,6 +1115,7 @@ class _MetricsAccessor(_BaseAccessor["CrossValidationReport"], DirNamesMixin):
         >>> report = CrossValidationReport(classifier, X=X, y=y, cv_splitter=2)
         >>> display = report.metrics.precision_recall()
         >>> display.plot()
+        >>> plt.close()
         """
         response_method = ("predict_proba", "decision_function")
         display_kwargs = {"pos_label": pos_label}
@@ -1164,6 +1168,7 @@ class _MetricsAccessor(_BaseAccessor["CrossValidationReport"], DirNamesMixin):
 
         Examples
         --------
+        >>> import matplotlib.pyplot as plt
         >>> from sklearn.datasets import load_diabetes
         >>> from sklearn.linear_model import Ridge
         >>> from skore import CrossValidationReport
@@ -1174,6 +1179,7 @@ class _MetricsAccessor(_BaseAccessor["CrossValidationReport"], DirNamesMixin):
         >>> display.plot(
         ...     kind="actual_vs_predicted", perfect_model_kwargs={"color": "tab:red"}
         ... )
+        >>> plt.close()
         """
         display_kwargs = {"subsample": subsample, "seed": seed}
         display = cast(
