@@ -6,6 +6,10 @@ from sklearn.datasets import make_classification
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from skore import ComparisonReport, CrossValidationReport, EstimatorReport
+from skore.sklearn._comparison._plot.roc_curve import CompCVRocCurveDisplay
+from skore.sklearn._comparison._plot.roc_curve import (
+    RocCurveDisplay as CompCVRocCurveDisplay,
+)
 from skore.sklearn._plot import RocCurveDisplay
 from skore.sklearn._plot.utils import sample_mpl_colormap
 

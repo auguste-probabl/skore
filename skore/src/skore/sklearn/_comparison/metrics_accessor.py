@@ -1534,6 +1534,28 @@ class _MetricsAccessor(_BaseAccessor, DirNamesMixin):
         """
         response_method = ("predict_proba", "decision_function")
         display_kwargs = {"pos_label": pos_label}
+
+        if self._parent._reports_type == "CrossValidationReport":
+            cv_displays = [
+                cv_report.metrics.roc(
+                    data_source=data_source,
+                    X=X,
+                    y=y,
+                    pos_label=pos_label,
+                )
+                for cv_report in self._parent.reports_
+            ]
+
+            return RocCurveDisplay(
+                fpr=[d.fpr for d in cv_displays],
+                tpr=[d.tpr for d in cv_displays],
+                roc_auc=[d.roc_auc for d in cv_displays],
+                estimator_names=self._parent.report_names_,
+                pos_label=cv_displays[0].pos_label,
+                data_source=data_source,
+                ml_task=self._parent._ml_task,
+            )
+
         display = cast(
             RocCurveDisplay,
             self._get_display(
