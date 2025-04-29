@@ -203,10 +203,10 @@ jobs:
       - name: Test with coverage
         if: ${{ matrix.coverage }}
         timeout-minutes: 10
-        working-directory: skore-remote-project/
+        working-directory: skore/
         run: |
-          mkdir coverage
-          python -m pytest -n auto src/ tests/ --junitxml=coverage/coverage.xml --cov-config=pyproject.toml --cov | tee coverage/coverage.txt
+          mkdir ../skore-remote-project/coverage
+          python -m pytest -n auto src/ tests/ --junitxml=../skore-remote-project/coverage/coverage.xml --cov-config=pyproject.toml --cov | tee ../skore-remote-project/coverage/coverage.txt
 
       - name: Upload coverage reports
         if: ${{ matrix.coverage && (github.event_name == 'pull_request') }}
