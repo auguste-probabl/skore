@@ -109,14 +109,7 @@ addopts = [
 ]
 
 [tool.coverage.run]
-branch = true
 source = ["skore"]
-concurrency = ["thread", "multiprocessing"]
-parallel = true
-
-[tool.coverage.report]
-omit = ["*/externals/*", "src/*", "tests/*"]
-show_missing = true
 
 [tool.ruff]
 src = ["skore"]
