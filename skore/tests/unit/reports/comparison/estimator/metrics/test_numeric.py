@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.base import clone
+from sklearn.dummy import DummyClassifier
 from sklearn.metrics import accuracy_score
+from sklearn.svm import LinearSVC
 from skore import ComparisonReport, EstimatorReport
 
 
@@ -464,3 +466,25 @@ def test_precision_recall_pos_label_overwrite(
             result.loc[metric.capitalize(), report_name]
             == result_both_labels.loc[(metric.capitalize(), "A"), report_name]
         )
+
+
+def test_stuff(binary_classification_train_test_split):
+    """If `scoring` is passed explicitly, then summarize should only fail if all
+    compared estimators do not implement the given scoring."""
+    X_train, X_test, y_train, y_test = binary_classification_train_test_split
+    estimator_report_1 = EstimatorReport(
+        DummyClassifier(strategy="uniform", random_state=0),
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+    )
+    estimator_report_2 = EstimatorReport(
+        LinearSVC(),  # Does not support Brier score
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+    )
+    report = ComparisonReport([estimator_report_1, estimator_report_2])
+    report.metrics.summarize(scoring="brier_score")
