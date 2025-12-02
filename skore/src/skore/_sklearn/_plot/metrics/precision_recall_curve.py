@@ -37,8 +37,6 @@ def _set_axis_labels(ax: Axes, info_pos_label: str | None) -> None:
         xlabel += info_pos_label
         ylabel += info_pos_label
 
-    # Use seaborn to set labels with better defaults
-    sns.despine(ax=ax)
     ax.set(
         xlabel=xlabel,
         xlim=(-0.01, 1.01),
