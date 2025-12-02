@@ -187,10 +187,11 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
 
                 label = f"{data_source.title()} set (AP = {average_precision:0.2f})"
 
-                # Use seaborn's lineplot for better styling
+                # Use seaborn's lineplot with DataFrame API
                 line = sns.lineplot(
-                    x=precision_recall["recall"],
-                    y=precision_recall["precision"],
+                    data=precision_recall,
+                    x="recall",
+                    y="precision",
                     ax=self.ax_,
                     **(line_kwargs | {"label": label}),
                 )
@@ -213,8 +214,9 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                 )["average_precision"].item()
 
                 line = sns.lineplot(
-                    x=precision_recall["recall"],
-                    y=precision_recall["precision"],
+                    data=precision_recall,
+                    x="recall",
+                    y="precision",
                     ax=self.ax_,
                     **(
                         line_kwargs_validated
@@ -277,8 +279,9 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                 )
 
                 line = sns.lineplot(
-                    x=precision_recall["recall"],
-                    y=precision_recall["precision"],
+                    data=precision_recall,
+                    x="recall",
+                    y="precision",
                     ax=self.ax_,
                     **line_kwargs_validated,
                 )
@@ -370,9 +373,11 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                     f"Split #{split_idx + 1} (AP = {average_precision:0.2f})"
                 )
 
-                (line,) = self.ax_.plot(
-                    precision_recall["recall"],
-                    precision_recall["precision"],
+                line = sns.lineplot(
+                    data=precision_recall,
+                    x="recall",
+                    y="precision",
+                    ax=self.ax_,
                     **line_kwargs_validated,
                 )
                 lines.append(line)
@@ -420,8 +425,9 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                         line_kwargs_validated["label"] = None
 
                     line = sns.lineplot(
-                        x=precision_recall["recall"],
-                        y=precision_recall["precision"],
+                        data=precision_recall,
+                        x="recall",
+                        y="precision",
                         ax=self.ax_,
                         **line_kwargs_validated,
                     )
@@ -623,8 +629,9 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                     )
 
                     line = sns.lineplot(
-                        x=segment["recall"],
-                        y=segment["precision"],
+                        data=segment,
+                        x="recall",
+                        y="precision",
                         ax=self.ax_,
                         **(line_kwargs_validated | label_kwargs),
                     )
@@ -691,8 +698,9 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                         )
 
                         line = sns.lineplot(
-                            x=segment["recall"],
-                            y=segment["precision"],
+                            data=segment,
+                            x="recall",
+                            y="precision",
                             ax=self.ax_[label_idx],
                             **(line_kwargs_validated | label_kwargs),
                         )
