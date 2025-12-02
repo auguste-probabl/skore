@@ -135,7 +135,9 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
         self.report_type = report_type
 
     @property
-    def lines_(self):
+    def lines_(self) -> list[Line2D]:
+        if isinstance(self.ax_, np.ndarray):
+            return [line for ax in self.ax_.flat for line in ax.get_lines()]
         return self.ax_.get_lines()
 
     def _plot_single_estimator(
@@ -548,7 +550,7 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
         *,
         estimator_names: list[str],
         pr_curve_kwargs: list[dict[str, Any]],
-    ) -> tuple[Axes, list[Line2D], str | None]:
+    ) -> tuple[Axes, str | None]:
         """Plot precision-recall curve of several estimators.
 
         Parameters
@@ -566,14 +568,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
         ax : matplotlib.axes.Axes
             The axes with the precision-recall curves plotted.
 
-        lines : list of matplotlib.lines.Line2D
-            The plotted precision-recall curve lines.
-
         info_pos_label : str or None
             String containing positive label information for binary classification,
             None for multiclass.
         """
-        lines: list[Line2D] = []
         line_kwargs: dict[str, Any] = {"drawstyle": "steps-post"}
 
         if self.ml_task == "binary-classification":
@@ -614,14 +612,13 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                         line_kwargs, pr_curve_kwargs[curve_idx]
                     )
 
-                    line = sns.lineplot(
+                    sns.lineplot(
                         data=segment,
                         x="recall",
                         y="precision",
                         ax=self.ax_,
                         **(line_kwargs_validated | label_kwargs),
                     )
-                    lines.append(line)
 
                     curve_idx += 1
 
@@ -683,14 +680,13 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                             line_kwargs, pr_curve_kwargs[idx]
                         )
 
-                        line = sns.lineplot(
+                        sns.lineplot(
                             data=segment,
                             x="recall",
                             y="precision",
                             ax=self.ax_[label_idx],
                             **(line_kwargs_validated | label_kwargs),
                         )
-                        lines.append(line)
 
                         idx = idx + 1
 
@@ -708,7 +704,7 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
 
             self.figure_.suptitle("Precision-Recall Curve")
 
-        return self.ax_, lines, info_pos_label
+        return self.ax_, info_pos_label
 
     @DisplayMixin.style_plot
     def plot(
@@ -821,13 +817,9 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                 pr_curve_kwargs=pr_curve_kwargs,
             )
         elif self.report_type == "comparison-cross-validation":
-            self.ax_, self.lines_, info_pos_label = (
-                self._plot_comparison_cross_validation(
-                    estimator_names=self.precision_recall[
-                        "estimator_name"
-                    ].cat.categories,
-                    pr_curve_kwargs=pr_curve_kwargs,
-                )
+            self.ax_, info_pos_label = self._plot_comparison_cross_validation(
+                estimator_names=self.precision_recall["estimator_name"].cat.categories,
+                pr_curve_kwargs=pr_curve_kwargs,
             )
         else:
             raise ValueError(
