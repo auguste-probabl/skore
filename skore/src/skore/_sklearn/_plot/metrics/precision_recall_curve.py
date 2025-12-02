@@ -3,6 +3,7 @@ from typing import Any, Literal, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 from matplotlib import colormaps
 from matplotlib.axes import Axes
 from matplotlib.lines import Line2D
@@ -16,7 +17,6 @@ from skore._sklearn._plot.base import DisplayMixin
 from skore._sklearn._plot.utils import (
     LINESTYLE,
     _ClassifierCurveDisplayMixin,
-    _despine_matplotlib_axis,
     _validate_style_kwargs,
     sample_mpl_colormap,
 )
@@ -37,6 +37,8 @@ def _set_axis_labels(ax: Axes, info_pos_label: str | None) -> None:
         xlabel += info_pos_label
         ylabel += info_pos_label
 
+    # Use seaborn to set labels with better defaults
+    sns.despine(ax=ax)
     ax.set(
         xlabel=xlabel,
         xlim=(-0.01, 1.01),
@@ -185,9 +187,11 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
 
                 label = f"{data_source.title()} set (AP = {average_precision:0.2f})"
 
-                (line,) = self.ax_.plot(
-                    precision_recall["recall"],
-                    precision_recall["precision"],
+                # Use seaborn's lineplot for better styling
+                line = sns.lineplot(
+                    x=precision_recall["recall"],
+                    y=precision_recall["precision"],
+                    ax=self.ax_,
                     **(line_kwargs | {"label": label}),
                 )
                 lines.append(line)
@@ -208,9 +212,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                     f"label == {self.pos_label!r}"
                 )["average_precision"].item()
 
-                (line,) = self.ax_.plot(
-                    precision_recall["recall"],
-                    precision_recall["precision"],
+                line = sns.lineplot(
+                    x=precision_recall["recall"],
+                    y=precision_recall["precision"],
+                    ax=self.ax_,
                     **(
                         line_kwargs_validated
                         | {"label": f"AP = {average_precision:0.2f}"}
@@ -271,9 +276,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                     user_style_kwargs=pr_curve_kwargs[class_idx],
                 )
 
-                (line,) = self.ax_.plot(
-                    precision_recall["recall"],
-                    precision_recall["precision"],
+                line = sns.lineplot(
+                    x=precision_recall["recall"],
+                    y=precision_recall["precision"],
+                    ax=self.ax_,
                     **line_kwargs_validated,
                 )
                 lines.append(line)
@@ -413,9 +419,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                     else:
                         line_kwargs_validated["label"] = None
 
-                    (line,) = self.ax_.plot(
-                        precision_recall["recall"],
-                        precision_recall["precision"],
+                    line = sns.lineplot(
+                        x=precision_recall["recall"],
+                        y=precision_recall["precision"],
+                        ax=self.ax_,
                         **line_kwargs_validated,
                     )
                     lines.append(line)
@@ -522,9 +529,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                         f"(AP = {average_precision:0.2f})"
                     )
 
-                    (line,) = self.ax_.plot(
-                        precision_recall["recall"],
-                        precision_recall["precision"],
+                    line = sns.lineplot(
+                        x=precision_recall["recall"],
+                        y=precision_recall["precision"],
+                        ax=self.ax_,
                         **line_kwargs_validated,
                     )
                     lines.append(line)
@@ -614,9 +622,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                         line_kwargs, pr_curve_kwargs[curve_idx]
                     )
 
-                    (line,) = self.ax_.plot(
-                        segment["recall"],
-                        segment["precision"],
+                    line = sns.lineplot(
+                        x=segment["recall"],
+                        y=segment["precision"],
+                        ax=self.ax_,
                         **(line_kwargs_validated | label_kwargs),
                     )
                     lines.append(line)
@@ -681,9 +690,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                             line_kwargs, pr_curve_kwargs[idx]
                         )
 
-                        (line,) = self.ax_[label_idx].plot(
-                            segment["recall"],
-                            segment["precision"],
+                        line = sns.lineplot(
+                            x=segment["recall"],
+                            y=segment["precision"],
+                            ax=self.ax_[label_idx],
                             **(line_kwargs_validated | label_kwargs),
                         )
                         lines.append(line)
@@ -840,12 +850,12 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
         ):
             for ax in self.ax_:
                 if despine:
-                    _despine_matplotlib_axis(ax)
+                    sns.despine(ax=ax)
         else:
             _set_axis_labels(self.ax_, info_pos_label)
 
             if despine:
-                _despine_matplotlib_axis(self.ax_)
+                sns.despine(ax=self.ax_)
 
     @classmethod
     def _compute_data_for_display(
