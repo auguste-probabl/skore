@@ -134,12 +134,16 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
         self.ml_task = ml_task
         self.report_type = report_type
 
+    @property
+    def lines_(self):
+        return self.ax_.get_lines()
+        
     def _plot_single_estimator(
         self,
         *,
         estimator_name: str,
         pr_curve_kwargs: list[dict[str, Any]],
-    ) -> tuple[Axes, list[Line2D], str | None]:
+    ) -> tuple[Axes, str | None]:
         """Plot precision-recall curve for a single estimator.
 
         Parameters
@@ -157,14 +161,10 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
         ax : matplotlib.axes.Axes
             The axes containing the plot.
 
-        lines : list of matplotlib.lines.Line2D
-            The plotted lines.
-
         info_pos_label : str or None
             String containing the positive label info for binary classification.
             None for multiclass.
         """
-        lines: list[Line2D] = []
         line_kwargs: dict[str, Any] = {"drawstyle": "steps-post"}
 
         if self.ml_task == "binary-classification":
@@ -186,14 +186,13 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                 label = f"{data_source.title()} set (AP = {average_precision:0.2f})"
 
                 # Use seaborn's lineplot with DataFrame API
-                line = sns.lineplot(
+                sns.lineplot(
                     data=precision_recall,
                     x="recall",
                     y="precision",
                     ax=self.ax_,
                     **(line_kwargs | {"label": label}),
                 )
-                lines.append(line)
 
             if self.data_source in ("train", "test"):
                 # NOTE: Seriously, mypy?
@@ -211,7 +210,7 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                     f"label == {self.pos_label!r}"
                 )["average_precision"].item()
 
-                line = sns.lineplot(
+                sns.lineplot(
                     data=precision_recall,
                     x="recall",
                     y="precision",
@@ -221,7 +220,6 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                         | {"label": f"AP = {average_precision:0.2f}"}
                     ),
                 )
-                lines.append(line)
 
             info_pos_label = (
                 f"\n(Positive label: {self.pos_label})"
@@ -276,14 +274,13 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
                     user_style_kwargs=pr_curve_kwargs[class_idx],
                 )
 
-                line = sns.lineplot(
+                sns.lineplot(
                     data=precision_recall,
                     x="recall",
                     y="precision",
                     ax=self.ax_,
                     **line_kwargs_validated,
                 )
-                lines.append(line)
 
             if self.data_source == "both":
                 for class_idx, class_label in enumerate(labels):
@@ -321,7 +318,7 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
             self.ax_.legend(loc="lower left", title=legend_title)
         self.ax_.set_title(f"Precision-Recall Curve for {estimator_name}")
 
-        return self.ax_, lines, info_pos_label
+        return self.ax_, info_pos_label
 
     def _plot_cross_validated_estimator(
         self,
@@ -810,7 +807,7 @@ class PrecisionRecallCurveDisplay(_ClassifierCurveDisplayMixin, DisplayMixin):
         )
 
         if self.report_type == "estimator":
-            self.ax_, self.lines_, info_pos_label = self._plot_single_estimator(
+            self.ax_, info_pos_label = self._plot_single_estimator(
                 estimator_name=(
                     self.precision_recall["estimator_name"].cat.categories.item()
                     if estimator_name is None
