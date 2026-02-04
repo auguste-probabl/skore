@@ -56,6 +56,60 @@ div.docutils.container.index-box {
   margin-block-end: 1.0rem;
 }
 
+/* Accessor dropdown (sd-acc-*): summary table + details, table-like style */
+.bd-content .sd-acc-dropdown.sd-card {
+  border: none;
+}
+.sd-acc-dropdown,
+.sd-acc-dropdown details,
+.sd-acc-dropdown .sd-acc-summary {
+  border-radius: 0;
+}
+.sd-acc-dropdown .sd-acc-summary {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  padding: 0;
+  background: var(--pst-color-background);
+}
+.sd-acc-dropdown .sd-acc-table-wrap {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+.sd-acc-dropdown .sd-acc-table {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-collapse: collapse;
+  background: var(--pst-color-background);
+}
+.sd-acc-dropdown .sd-acc-table td {
+  padding: 0.5rem;
+  vertical-align: middle;
+  border-left: 1px solid var(--pst-color-border);
+  border-top: none;
+  border-bottom: none;
+}
+.sd-acc-dropdown .sd-acc-table td:first-child {
+  border-left: none;
+}
+.sd-acc-dropdown .sd-acc-chevron {
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  width: 1.5em;
+  height: 1.5em;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M8.72 18.78a.75.75 0 0 1 0-1.06L14.44 12 8.72 6.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0Z'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+.sd-acc-dropdown details[open] .sd-acc-chevron {
+  transform: rotate(90deg);
+}
+
 div.card-body div.output_result {
   overflow-x: auto;
 }

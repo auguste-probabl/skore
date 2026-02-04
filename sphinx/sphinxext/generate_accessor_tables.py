@@ -4,17 +4,124 @@ Sphinx extension to automatically generate accessor method tables using Jinja te
 This extension adds a config value `accessor_summary_classes` which should be a list
 of class names to generate accessor summaries for. It automatically generates the
 dropdown tables with accessor methods during the build process using a Jinja template.
+
+It also provides a custom ``accessor_dropdown`` directive that renders a 30/70 table
+row (class + doc) and a collapsible details/summary block with the same styling as
+sphinx-design dropdowns, so the inner content is reliably visible.
 """
 
+import html
 import inspect
 from pathlib import Path
 from typing import Any
 
+from docutils import nodes
+from docutils.parsers.rst import Directive, directives
 from jinja2 import Environment, FileSystemLoader
 from sphinx.application import Sphinx
 from sphinx.util import logging
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Custom "accessor_dropdown" directive and node (table + details/summary)
+# ---------------------------------------------------------------------------
+
+
+class accessor_dropdown_node(nodes.Element, nodes.General):
+    """Node for the accessor dropdown: a table row (class | doc) + details/summary."""
+
+    pass
+
+
+def visit_accessor_dropdown_html(self, node: accessor_dropdown_node) -> None:
+    """Emit <details> with <summary> = one row: [chevron] + table (30/70). Styles in custom.css (sd-acc-*)."""
+    name = node.get("name", "")
+    doc = (node.get("doc", "") or "").strip().strip('"')
+    full_name = node.get("full_name", name)
+    uri = node.get("uri", "#")
+    anchor = node.get("anchor", full_name)
+    opened = node.get("opened", False)
+    doc_escaped = html.escape(doc)
+    open_attr = ' open="open"' if opened else ""
+    class_link = (
+        f'<a class="reference internal" href="{html.escape(uri)}#{html.escape(anchor)}" '
+        f'title="{html.escape(full_name)}">'
+        f'<code class="xref py py-class docutils literal notranslate">'
+        f'<span class="pre">{html.escape(name)}</span></code></a>'
+    )
+    chevron_span = '<span class="sd-acc-chevron" aria-hidden="true"></span>'
+    table_html = (
+        '<div class="sd-acc-table-wrap">'
+        '<table class="table sd-acc-table">'
+        "<colgroup><col style=\"width: 30%\"><col style=\"width: 70%\"></colgroup>"
+        "<tbody><tr class=\"row-odd\">"
+        f"<td>{class_link}</td>"
+        f"<td>{doc_escaped}</td>"
+        "</tr></tbody></table></div>"
+    )
+    self.body.append(
+        '<div class="sd-sphinx-override sd-dropdown sd-card sd-mb-3 sd-acc-dropdown">'
+        f"<details{open_attr}>"
+        '<summary class="sd-summary-title sd-card-header sd-acc-summary">'
+        f"{chevron_span}{table_html}"
+        "</summary>"
+        '<div class="sd-summary-content sd-card-body docutils">'
+    )
+
+
+def depart_accessor_dropdown_html(self, node: accessor_dropdown_node) -> None:
+    """Close the content div and details."""
+    self.body.append("</div></details></div>")
+
+
+def visit_accessor_dropdown_latex(self, node: accessor_dropdown_node) -> None:
+    """LaTeX: emit a paragraph for the title and let children render."""
+    name = node.get("name", "")
+    doc = node.get("doc", "")
+    self.body.append(f"\\paragraph{{{name}}}: {doc}\n\n")
+
+
+def depart_accessor_dropdown_latex(self, node: accessor_dropdown_node) -> None:
+    """LaTeX: nothing to close."""
+    pass
+
+
+class AccessorDropdownDirective(Directive):
+    """Directive that renders a table row (class | doc) and a collapsible body with same look as sphinx-design."""
+
+    required_arguments = 1  # class name (short)
+    optional_arguments = 0
+    final_argument_whitespace = True
+    has_content = True
+    option_spec = {
+        "doc": directives.unchanged_required,
+        "full_name": directives.unchanged_required,
+        "uri": directives.unchanged_required,
+        "anchor": directives.unchanged,
+        "open": directives.flag,
+    }
+
+    def run(self) -> list[nodes.Node]:
+        name = self.arguments[0].strip()
+        doc = self.options.get("doc", "")
+        full_name = self.options.get("full_name", name)
+        uri = self.options.get("uri", "#")
+        anchor = self.options.get("anchor", full_name)
+        opened = "open" in self.options
+
+        node = accessor_dropdown_node(
+            "",
+            name=name,
+            doc=doc,
+            full_name=full_name,
+            uri=uri,
+            anchor=anchor,
+            opened=opened,
+        )
+        self.state.nested_parse(self.content, self.content_offset, node)
+        return [node]
 
 
 def get_doc_first_line(obj):
@@ -129,6 +236,11 @@ def generate_accessor_tables(app: Sphinx, config: Any) -> None:
         cls = getattr(module, class_name)
 
         class_data = get_accessor_data(cls)
+        # Full dotted path for doc links (e.g. skore.EstimatorReport)
+        class_data["full_name"] = class_path
+        # Relative URI from reference/index to api/ClassName.html
+        class_data["uri"] = f"../api/{class_path}.html"
+        class_data["anchor"] = class_path
         classes_data.append(class_data)
 
         logger.info(f"Collected accessor data for {class_name}")
@@ -149,6 +261,12 @@ def setup(app: Sphinx) -> dict[str, Any]:
     """Setup the extension."""
     app.add_config_value("accessor_summary_classes", [], "html")
     app.connect("config-inited", generate_accessor_tables)
+    app.add_node(
+        accessor_dropdown_node,
+        html=(visit_accessor_dropdown_html, depart_accessor_dropdown_html),
+        latex=(visit_accessor_dropdown_latex, depart_accessor_dropdown_latex),
+    )
+    app.add_directive("accessor_dropdown", AccessorDropdownDirective)
 
     return {
         "version": "0.1",
