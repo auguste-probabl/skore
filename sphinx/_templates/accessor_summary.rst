@@ -1,5 +1,9 @@
 {% for class_info in classes %}
-.. dropdown:: :class:`~{{ class_info.name }}`: {{ class_info.doc }}
+.. accessor_dropdown:: {{ class_info.name }}
+   :doc: "{{ class_info.doc | e }}"
+   :full_name: {{ class_info.full_name }}
+   :uri: {{ class_info.uri }}
+
    {% for accessor_name, accessor_data in class_info.accessors.items() %}
    **{{ accessor_name.capitalize() }}**: :class:`{{ class_info.name }}.{{ accessor_name }}`
 
