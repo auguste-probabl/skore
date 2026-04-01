@@ -496,6 +496,63 @@ class MetricRegistry(UserDict):
     def __repr__(self):
         return f"{self.__class__.__name__}({list(self.data.keys())})"
 
+    def register(self, metric: MetricLike, **kwargs):
+        """Add a custom metric to the registry.
+
+        Parameters
+        ----------
+        metric : str, sklearn scorer, or callable
+            The metric to add.
+        kwargs : Any
+            The keyword arguments to pass to the metric.
+        """
+        parsed_metric = self.check_metric(metric, kwargs)
+
+        if parsed_metric.name in [m.name for m in BUILTIN_METRICS]:
+            raise ValueError(
+                f"Cannot register {parsed_metric.name!r}: it is a built-in metric name."
+            )
+
+        # Retrieve the metric function source code (best-effort)
+        if parsed_metric.score_func is not None:
+
+            # Skip library decorators (e.g. sklearn's validate_params)
+            fn_inner = parsed_metric.score_func
+            while hasattr(fn_inner, "__wrapped__"):
+                fn_inner = fn_inner.__wrapped__
+
+            if "<lambda>" in getattr(fn_inner, "__qualname__", ""):
+                warnings.warn(
+                    f"Registered metric {parsed_metric.name!r} uses a lambda "
+                    "function, which may not survive pickling.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            elif getattr(fn_inner, "__closure__", None) is not None:
+                warnings.warn(
+                    f"Registered metric {parsed_metric.name!r} uses a closure, "
+                    "which may not survive pickling.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            try:
+                parsed_metric.source_code = inspect.getsource(fn_inner)
+            except (OSError, TypeError):
+                parsed_metric.source_code = None
+
+        # Invalidate cached results when re-registering an existing metric
+        if parsed_metric.name in self.data:
+            keys_to_delete = [
+                k
+                for k in self._report._cache
+                if isinstance(k, tuple) and len(k) >= 2 and k[1] == parsed_metric.name
+            ]
+            for k in keys_to_delete:
+                del self._report._cache[k]
+
+        self.data[parsed_metric.name] = parsed_metric
+
     def check_metric(self, metric: MetricLike, metric_kwargs: dict[str, Any]) -> Metric:
         """Convert a single "metric-like" to a Metric.
 
