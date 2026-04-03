@@ -13,6 +13,7 @@ from sklearn.metrics import (
 )
 
 from skore import EstimatorReport
+from skore._sklearn.metrics import Metric, make_metric
 from skore._utils._testing import check_cache_changed, check_cache_unchanged
 
 
@@ -77,18 +78,74 @@ class TestBasicRegistration:
         assert metric.greater_is_better is False
         assert metric.response_method == "predict"
 
+    def test_register_callable(self, binary_classification_report):
+        """Test registering a plain callable (y_true, y_pred) -> float."""
+        report = binary_classification_report
+
+        report.metrics.register(accuracy_score)
+
+        assert "accuracy_score" in report._metric_registry
+        metric = report._metric_registry["accuracy_score"]
+        assert metric.response_method == "predict"
+        assert metric.greater_is_better is True
+
+        display = report.metrics.summarize(metric="accuracy_score")
+        assert display.data["score"].iloc[0] >= 0
+
+    def test_register_callable_missing_kwargs(self, binary_classification_report):
+        """Registering a callable with required params but no kwargs errors."""
+        report = binary_classification_report
+
+        with pytest.raises(TypeError, match="required parameter"):
+            report.metrics.register(business_loss)
+
+    def test_register_callable_with_name(self, binary_classification_report):
+        """Test registering a callable with a custom name."""
+        report = binary_classification_report
+
+        report.metrics.register(
+            business_loss, name="custom_metric", cost_fp=10, cost_fn=5
+        )
+
+        assert "custom_metric" in report._metric_registry
+        assert report._metric_registry["custom_metric"].verbose_name == "Custom Metric"
+
+    def test_register_callable_with_kwargs(self, binary_classification_report):
+        """Test registering a callable with default kwargs via **kwargs."""
+        report = binary_classification_report
+
+        report.metrics.register(business_loss, cost_fp=20, cost_fn=3)
+
+        metric = report._metric_registry["business_loss"]
+        assert metric.kwargs == {"cost_fp": 20, "cost_fn": 3}
+
+        display = report.metrics.summarize(metric="business_loss")
+        assert display.data["score"].notna().all()
+
+    def test_register_metric_instance(self, binary_classification_report):
+        """Test registering a Metric instance directly."""
+        from skore._sklearn.metrics import Metric
+
+        report = binary_classification_report
+
+        metric = Metric(
+            name="custom_acc",
+            score_func=accuracy_score,
+            response_method="predict",
+            greater_is_better=True,
+        )
+        report.metrics.register(metric)
+
+        assert "custom_acc" in report._metric_registry
+        display = report.metrics.summarize(metric="custom_acc")
+        assert display.data["score"].iloc[0] > 0
+
     def test_register_multiple_metrics(self, binary_classification_report):
         """Test registering multiple custom metrics."""
         report = binary_classification_report
 
-        scorer1 = custom_scorer
-        scorer2 = make_scorer(
-            accuracy_score,
-            response_method="predict",
-        )
-
-        report.metrics.register(scorer1)
-        report.metrics.register(scorer2)
+        report.metrics.register(custom_scorer)
+        report.metrics.register(make_scorer(accuracy_score, response_method="predict"))
 
         assert "business_loss" in report._metric_registry
         assert "accuracy_score" in report._metric_registry
@@ -158,16 +215,6 @@ class TestBuiltInProtection:
 class TestScorerExtraction:
     """Test extraction of metadata from sklearn scorers."""
 
-    def test_extract_score_func(self, binary_classification_report):
-        """Test that _score_func is correctly extracted."""
-        report = binary_classification_report
-
-        report.metrics.register(custom_scorer)
-
-        # The registered metric should use the original function
-        metric = report._metric_registry["business_loss"]
-        assert metric.score_func == business_loss
-
     def test_extract_response_method(self, binary_classification_report):
         """Test that _response_method is correctly extracted."""
         report = binary_classification_report
@@ -182,6 +229,7 @@ class TestScorerExtraction:
         report.metrics.register(proba_scorer)
 
         metric = report._metric_registry["detection_failure_cost"]
+        assert metric.score_func == detection_failure_cost
         assert metric.response_method == "predict_proba"
 
     def test_extract_kwargs(self, binary_classification_report):
@@ -643,3 +691,176 @@ class TestSerialization:
 
         assert report2._metric_registry["business_loss"].is_callable()
         assert report2._metric_registry["accuracy_score"].is_callable()
+
+
+# make_metric tests
+
+
+class TestMakeMetric:
+    """Test the standalone make_metric function."""
+
+    def test_make_metric_from_callable(self):
+        """Test creating a Metric from a plain callable."""
+        metric = make_metric(business_loss, kwargs={"cost_fp": 10, "cost_fn": 5})
+
+        assert isinstance(metric, Metric)
+        assert metric.name == "business_loss"
+        assert metric.score_func is business_loss
+        assert metric.response_method == "predict"
+        assert metric.greater_is_better is True
+
+    def test_make_metric_from_callable_with_name(self):
+        """Test creating a Metric from a callable with a custom name."""
+        metric = make_metric(
+            business_loss, name="my_loss", kwargs={"cost_fp": 10, "cost_fn": 5}
+        )
+
+        assert metric.name == "my_loss"
+        assert metric.verbose_name == "My Loss"
+        assert metric.score_func is business_loss
+
+    def test_make_metric_from_callable_greater_is_better(self):
+        """Test creating a Metric from a callable with greater_is_better=False."""
+        metric = make_metric(
+            business_loss,
+            greater_is_better=False,
+            kwargs={"cost_fp": 10, "cost_fn": 5},
+        )
+
+        assert metric.greater_is_better is False
+
+    def test_make_metric_from_callable_missing_kwargs(self):
+        """Test that make_metric raises for required params without kwargs."""
+        with pytest.raises(TypeError, match="required parameter"):
+            make_metric(business_loss)
+
+    def test_make_metric_from_callable_response_method(self):
+        """Test creating a Metric from a callable with custom response_method."""
+        metric = make_metric(detection_failure_cost, response_method="predict_proba")
+
+        assert metric.response_method == "predict_proba"
+
+    def test_make_metric_from_scorer(self):
+        """Test creating a Metric from an sklearn scorer."""
+        scorer = make_scorer(
+            business_loss,
+            greater_is_better=False,
+            response_method="predict",
+            cost_fp=10,
+            cost_fn=5,
+        )
+        metric = make_metric(scorer)
+
+        assert isinstance(metric, Metric)
+        assert metric.name == "business_loss"
+        assert metric.score_func is business_loss
+        assert metric.greater_is_better is False
+        assert metric.response_method == "predict"
+
+    def test_make_metric_from_scorer_with_name(self):
+        """Test creating a Metric from a scorer with a custom name override."""
+        scorer = make_scorer(
+            business_loss,
+            greater_is_better=False,
+            response_method="predict",
+            cost_fp=10,
+            cost_fn=5,
+        )
+        metric = make_metric(scorer, name="custom_name")
+
+        assert metric.name == "custom_name"
+        assert metric.verbose_name == "Custom Name"
+
+    def test_make_metric_from_callable_with_kwargs(self):
+        """Test creating a Metric from a callable with default kwargs."""
+        metric = make_metric(business_loss, kwargs={"cost_fp": 20, "cost_fn": 3})
+
+        assert metric.kwargs == {"cost_fp": 20, "cost_fn": 3}
+
+    def test_make_metric_from_scorer_extracts_kwargs(self):
+        """Test that scorer kwargs are extracted."""
+        scorer = make_scorer(
+            business_loss,
+            greater_is_better=False,
+            response_method="predict",
+            cost_fp=20,
+            cost_fn=3,
+        )
+        metric = make_metric(scorer)
+
+        assert metric.kwargs == {"cost_fp": 20, "cost_fn": 3}
+
+    def test_make_metric_from_metric(self):
+        """Test creating a Metric from an existing Metric (copies, doesn't alias)."""
+        original = Metric(
+            name="original",
+            score_func=accuracy_score,
+            response_method="predict",
+            greater_is_better=True,
+        )
+        result = make_metric(original)
+
+        assert isinstance(result, Metric)
+        assert result.name == "original"
+        assert result is not original
+
+    def test_make_metric_from_metric_with_name(self):
+        """Test creating a Metric from a Metric with name override."""
+        original = Metric(
+            name="original",
+            score_func=accuracy_score,
+            response_method="predict",
+            greater_is_better=True,
+        )
+        result = make_metric(original, name="renamed")
+
+        assert result.name == "renamed"
+        assert result.verbose_name == "Renamed"
+        assert original.name == "original"  # unchanged
+
+    def test_make_metric_from_string(self):
+        """Test creating a Metric from an sklearn scorer string name."""
+        metric = make_metric("f1")
+
+        assert isinstance(metric, Metric)
+        assert metric.name == "f1_score"
+        assert metric.score_func is not None
+
+    def test_make_metric_from_invalid_string(self):
+        """Test that an invalid string raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid metric"):
+            make_metric("xyz")
+
+    def test_make_metric_invalid_type(self):
+        """Test that passing an invalid type raises an error."""
+        with pytest.raises(TypeError, match="Cannot create"):
+            make_metric(42)
+
+
+# Simplified registry.register tests
+
+
+class TestSimplifiedRegistryRegister:
+    """Test that MetricRegistry.register only accepts Metric instances."""
+
+    def test_registry_register_rejects_non_metric(self, binary_classification_report):
+        """MetricRegistry.register raises TypeError on raw callables."""
+        report = binary_classification_report
+        with pytest.raises(TypeError, match="Expected.*Metric"):
+            report._metric_registry.register(business_loss)
+
+    def test_registry_register_rejects_scorer(self, binary_classification_report):
+        """MetricRegistry.register raises TypeError on sklearn scorers."""
+        report = binary_classification_report
+        scorer = make_scorer(
+            business_loss, response_method="predict", cost_fp=10, cost_fn=5
+        )
+        with pytest.raises(TypeError, match="Expected.*Metric"):
+            report._metric_registry.register(scorer)
+
+    def test_registry_register_accepts_metric(self, binary_classification_report):
+        """MetricRegistry.register accepts Metric instances."""
+        report = binary_classification_report
+        metric = make_metric(business_loss, kwargs={"cost_fp": 10, "cost_fn": 5})
+        report._metric_registry.register(metric)
+        assert "business_loss" in report._metric_registry

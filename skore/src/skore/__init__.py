@@ -36,6 +36,7 @@ from skore._sklearn._plot.inspection.impurity_decrease import (
 from skore._sklearn._plot.inspection.permutation_importance import (
     PermutationImportanceDisplay,
 )
+from skore._sklearn.metrics import make_metric
 from skore._utils._patch import setup_jupyter_display
 from skore._utils._show_versions import show_versions
 
@@ -74,6 +75,7 @@ __all__ = [
     "TableReportDisplay",
     "configuration",
     "login",
+    "make_metric",
     "show_versions",
     "train_test_split",
 ]

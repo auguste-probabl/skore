@@ -28,6 +28,7 @@ from skore._sklearn.metrics import (
     Recall,
     Rmse,
     RocAuc,
+    make_metric,
 )
 from skore._sklearn.types import DataSource, MetricLike, PositiveLabel
 from skore._utils._accessor import _check_supported_ml_task
@@ -94,6 +95,7 @@ class _MetricsAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
         self,
         metric: MetricLike,
         *,
+        name: str | None = None,
         response_method: str | list[str] = "predict",
         greater_is_better: bool = True,
         **kwargs: Any,
@@ -104,6 +106,9 @@ class _MetricsAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
         ----------
         metric : str, sklearn scorer, or callable
             The metric to add.
+        name : str, optional
+            Custom name for the metric. If not provided, the name is inferred
+            from the metric (e.g. the function's ``__name__``).
         response_method : str or list of str, default="predict"
             Estimator method to get predictions (only for callables).
         greater_is_better : bool, default=True
@@ -136,7 +141,14 @@ class _MetricsAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
         Predict time (s)               0.000323
         Mean Absolute Error            0.052632
         """
-        self._parent._metric_registry.register(metric)
+        metric_obj = make_metric(
+            metric,
+            name=name,
+            response_method=response_method,
+            greater_is_better=greater_is_better,
+            kwargs=kwargs or None,
+        )
+        self._parent._metric_registry.register(metric_obj)
 
     def summarize(
         self,

@@ -19,6 +19,103 @@ if TYPE_CHECKING:
     from skore import EstimatorReport
 
 
+def make_metric(
+    metric: MetricLike,
+    *,
+    name: str | None = None,
+    response_method: str | list[str] | tuple[str, ...] = "predict",
+    greater_is_better: bool = True,
+    kwargs: dict[str, Any] | None = None,
+) -> Metric:
+    """Convert a metric-like object into a :class:`Metric` instance.
+
+    Parameters
+    ----------
+    metric : callable, sklearn scorer, or Metric
+        The metric to convert.
+
+        - **callable**: a function ``(y_true, y_pred, **kw) -> float``.
+        - **sklearn scorer**: an object returned by
+          :func:`sklearn.metrics.make_scorer` or
+          :func:`sklearn.metrics.get_scorer`.
+        - **Metric**: an existing :class:`Metric` instance (a copy is returned).
+
+    name : str, optional
+        Custom name for the metric.  If not provided the name is inferred
+        from the input (e.g. the function's ``__name__``).
+
+    response_method : str or list of str, default="predict"
+        Estimator method used to obtain predictions.  Only used when
+        *metric* is a plain callable.
+
+    greater_is_better : bool, default=True
+        Whether a higher score is better.  Only used when *metric* is a
+        plain callable.
+
+    kwargs : dict, optional
+        Default keyword arguments passed to the score function at call time.
+        Only used when *metric* is a plain callable.  For sklearn scorers,
+        kwargs are extracted from the scorer itself.
+
+    Returns
+    -------
+    Metric
+        A new :class:`Metric` instance.
+    """
+    if isinstance(metric, Metric):
+        result = copy.copy(metric)
+        if name is not None:
+            result.name = name
+            result.verbose_name = name.replace("_", " ").title()
+        return result
+    elif isinstance(metric, _BaseScorer):
+        scorer_kwargs = metric._kwargs.copy()
+        return Metric(
+            name=name or metric._score_func.__name__,
+            greater_is_better=metric._sign == 1,
+            score_func=metric._score_func,
+            response_method=metric._response_method,
+            kwargs=scorer_kwargs,
+        )
+    elif isinstance(metric, str):
+        try:
+            scorer = sklearn.metrics.get_scorer(metric)
+        except ValueError:
+            raise ValueError(
+                f"Invalid metric: {metric!r}. "
+                "Please use a valid scikit-learn metric string: "
+                f"{sklearn.metrics.get_scorer_names()}."
+            ) from None
+        return make_metric(scorer, name=name)
+    elif callable(metric):
+        resolved_kwargs = kwargs or {}
+        params = list(inspect.signature(metric).parameters.items())
+        missing_kwargs = [
+            p
+            for p, param in params[2:]  # y_true, y_pred
+            if param.default is inspect.Parameter.empty and p not in resolved_kwargs
+        ]
+        if missing_kwargs:
+            raise TypeError(
+                f"{metric.__name__}() has required parameter(s) "
+                f"{missing_kwargs} not covered by the provided kwargs. "
+                f"Pass them as keyword arguments, e.g.: "
+                f"register({metric.__name__}, {missing_kwargs[0]}=...)"
+            )
+        return Metric(
+            name=name or metric.__name__,
+            greater_is_better=greater_is_better,
+            score_func=metric,
+            response_method=response_method,
+            kwargs=resolved_kwargs,
+        )
+    else:
+        raise TypeError(
+            f"Cannot create a Metric from {type(metric)!r}. "
+            "Expected a callable, sklearn scorer, or Metric instance."
+        )
+
+
 def _select_kwargs(func: Callable, kwargs: dict[str, Any]) -> dict[str, Any]:
     """Filter `kwargs` based on the kwargs that `func` accepts."""
     return {
@@ -496,64 +593,72 @@ class MetricRegistry(UserDict):
     def __repr__(self):
         return f"{self.__class__.__name__}({list(self.data.keys())})"
 
-    def register(self, metric: MetricLike, **kwargs):
+    def register(self, metric: Metric) -> None:
         """Add a custom metric to the registry.
 
         Parameters
         ----------
-        metric : str, sklearn scorer, or callable
-            The metric to add.
-        kwargs : Any
-            The keyword arguments to pass to the metric.
+        metric : Metric
+            The metric instance to add.  Use :func:`make_metric` to convert
+            callables or sklearn scorers into a :class:`Metric` first.
         """
-        parsed_metric = self.check_metric(metric, kwargs)
+        if not isinstance(metric, Metric):
+            raise TypeError(
+                f"Expected a Metric instance, got {type(metric)!r}. "
+                "Use make_metric() to convert callables or sklearn scorers."
+            )
 
-        if parsed_metric.name in [m.name for m in BUILTIN_METRICS]:
+        if metric.name in [m.name for m in BUILTIN_METRICS]:
             raise ValueError(
-                f"Cannot register {parsed_metric.name!r}: it is a built-in metric name."
+                f"Cannot register {metric.name!r}: it is a built-in metric name."
             )
 
         # Retrieve the metric function source code (best-effort)
-        if parsed_metric.score_func is not None:
-
+        if metric.score_func is not None:
             # Skip library decorators (e.g. sklearn's validate_params)
-            fn_inner = parsed_metric.score_func
+            fn_inner = metric.score_func
             while hasattr(fn_inner, "__wrapped__"):
                 fn_inner = fn_inner.__wrapped__
 
             if "<lambda>" in getattr(fn_inner, "__qualname__", ""):
                 warnings.warn(
-                    f"Registered metric {parsed_metric.name!r} uses a lambda "
+                    f"Registered metric {metric.name!r} uses a lambda "
                     "function, which may not survive pickling.",
                     UserWarning,
                     stacklevel=2,
                 )
             elif getattr(fn_inner, "__closure__", None) is not None:
                 warnings.warn(
-                    f"Registered metric {parsed_metric.name!r} uses a closure, "
+                    f"Registered metric {metric.name!r} uses a closure, "
                     "which may not survive pickling.",
                     UserWarning,
                     stacklevel=2,
                 )
 
             try:
-                parsed_metric.source_code = inspect.getsource(fn_inner)
+                metric.source_code = inspect.getsource(fn_inner)
             except (OSError, TypeError):
-                parsed_metric.source_code = None
+                metric.source_code = None
 
         # Invalidate cached results when re-registering an existing metric
-        if parsed_metric.name in self.data:
+        if metric.name in self.data:
             keys_to_delete = [
                 k
                 for k in self._report._cache
-                if isinstance(k, tuple) and len(k) >= 2 and k[1] == parsed_metric.name
+                if isinstance(k, tuple) and len(k) >= 2 and k[1] == metric.name
             ]
             for k in keys_to_delete:
                 del self._report._cache[k]
 
-        self.data[parsed_metric.name] = parsed_metric
+        self.data[metric.name] = metric
 
-    def check_metric(self, metric: MetricLike, metric_kwargs: dict[str, Any]) -> Metric:
+    def check_metric(
+        self,
+        metric: MetricLike | Metric,
+        metric_kwargs: dict[str, Any],
+        *,
+        name: str | None = None,
+    ) -> Metric:
         """Convert a single "metric-like" to a Metric.
 
         Parameters
@@ -562,8 +667,17 @@ class MetricRegistry(UserDict):
             The metric to parse.
         metric_kwargs : dict
             Kwargs to pass; each metric takes only the kwargs it accepts.
+        name : str, optional
+            Custom name for the metric. If not provided, the name is inferred
+            from the metric (e.g. the function's ``__name__``).
         """
-        if isinstance(metric, _BaseScorer):
+        if isinstance(metric, Metric):
+            result = copy.copy(metric)
+            if name is not None:
+                result.name = name
+                result.verbose_name = name.replace("_", " ").title()
+            return result
+        elif isinstance(metric, _BaseScorer):
             func_name = metric._score_func.__name__
 
             kwargs = metric._kwargs.copy()
@@ -580,7 +694,7 @@ class MetricRegistry(UserDict):
                 kwargs["pos_label"] = self._report.pos_label
 
             return Metric(
-                name=func_name,
+                name=name or func_name,
                 greater_is_better=metric._sign == 1,
                 score_func=metric._score_func,
                 response_method=metric._response_method,
@@ -593,6 +707,9 @@ class MetricRegistry(UserDict):
                 if parsed_metric.score_func is not None
                 else {}
             )
+            if name is not None:
+                parsed_metric.name = name
+                parsed_metric.verbose_name = name.replace("_", " ").title()
             return parsed_metric
         elif isinstance(metric, str):
             if len(metric_kwargs) != 0:
@@ -614,7 +731,7 @@ class MetricRegistry(UserDict):
                     f"{sklearn.metrics.get_scorer_names()}."
                 ) from err
 
-            return self.check_metric(scorer, metric_kwargs)
+            return self.check_metric(scorer, metric_kwargs, name=name)
         elif callable(metric):
             if "response_method" not in metric_kwargs:
                 raise ValueError(
@@ -623,7 +740,7 @@ class MetricRegistry(UserDict):
                 )
 
             return Metric(
-                name=metric.__name__,
+                name=name or metric.__name__,
                 greater_is_better=metric_kwargs.get("greater_is_better"),
                 score_func=metric,
                 response_method=metric_kwargs["response_method"],
