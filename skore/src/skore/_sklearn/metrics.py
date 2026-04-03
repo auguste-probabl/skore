@@ -656,10 +656,12 @@ class MetricRegistry(UserDict):
         self,
         metric: MetricLike | Metric,
         metric_kwargs: dict[str, Any],
-        *,
-        name: str | None = None,
     ) -> Metric:
         """Convert a single "metric-like" to a Metric.
+
+        This is used by :meth:`_parse_metrics` (the ``summarize`` path) where
+        users pass strings/callables inline with ``metric_kwargs``.  For plain
+        conversion without registry context, use :func:`make_metric` instead.
 
         Parameters
         ----------
@@ -667,49 +669,16 @@ class MetricRegistry(UserDict):
             The metric to parse.
         metric_kwargs : dict
             Kwargs to pass; each metric takes only the kwargs it accepts.
-        name : str, optional
-            Custom name for the metric. If not provided, the name is inferred
-            from the metric (e.g. the function's ``__name__``).
         """
-        if isinstance(metric, Metric):
-            result = copy.copy(metric)
-            if name is not None:
-                result.name = name
-                result.verbose_name = name.replace("_", " ").title()
-            return result
-        elif isinstance(metric, _BaseScorer):
-            func_name = metric._score_func.__name__
-
-            kwargs = metric._kwargs.copy()
-            if "pos_label" in inspect.signature(metric._score_func).parameters:
-                if (
-                    "pos_label" in kwargs
-                    and self._report.pos_label != kwargs["pos_label"]
-                ):
-                    raise ValueError(
-                        "The `pos_label` passed in the scorer "
-                        "and the one used when creating the report must match; "
-                        f"got {kwargs['pos_label']!r} and {self._report.pos_label!r}."
-                    )
-                kwargs["pos_label"] = self._report.pos_label
-
-            return Metric(
-                name=name or func_name,
-                greater_is_better=metric._sign == 1,
-                score_func=metric._score_func,
-                response_method=metric._response_method,
-                kwargs=kwargs,
-            )
-        elif metric in self:
+        # String that matches an already-registered metric name
+        if metric in self:
             parsed_metric = copy.copy(self[metric])
-            parsed_metric.kwargs = (
+            extra = (
                 _select_kwargs(parsed_metric.score_func, metric_kwargs)
                 if parsed_metric.score_func is not None
                 else {}
             )
-            if name is not None:
-                parsed_metric.name = name
-                parsed_metric.verbose_name = name.replace("_", " ").title()
+            parsed_metric.kwargs = parsed_metric.kwargs | extra
             return parsed_metric
         elif isinstance(metric, str):
             if len(metric_kwargs) != 0:
@@ -731,7 +700,25 @@ class MetricRegistry(UserDict):
                     f"{sklearn.metrics.get_scorer_names()}."
                 ) from err
 
-            return self.check_metric(scorer, metric_kwargs, name=name)
+            return self.check_metric(scorer, metric_kwargs)
+        elif isinstance(metric, Metric):
+            return make_metric(metric)
+        elif isinstance(metric, _BaseScorer):
+            result = make_metric(metric)
+            # Validate and inject pos_label from the report
+            if "pos_label" in inspect.signature(metric._score_func).parameters:
+                if (
+                    "pos_label" in result.kwargs
+                    and self._report.pos_label != result.kwargs["pos_label"]
+                ):
+                    raise ValueError(
+                        "The `pos_label` passed in the scorer "
+                        "and the one used when creating the report must match; "
+                        f"got {result.kwargs['pos_label']!r} "
+                        f"and {self._report.pos_label!r}."
+                    )
+                result.kwargs["pos_label"] = self._report.pos_label
+            return result
         elif callable(metric):
             if "response_method" not in metric_kwargs:
                 raise ValueError(
@@ -739,12 +726,12 @@ class MetricRegistry(UserDict):
                     "callable. Pass it directly or through `metric_kwargs`."
                 )
 
-            return Metric(
-                name=name or metric.__name__,
-                greater_is_better=metric_kwargs.get("greater_is_better"),
-                score_func=metric,
+            result = make_metric(
+                metric,
                 response_method=metric_kwargs["response_method"],
-                kwargs=_select_kwargs(metric, metric_kwargs),
             )
+            result.greater_is_better = metric_kwargs.get("greater_is_better")
+            result.kwargs = _select_kwargs(metric, metric_kwargs)
+            return result
         else:
             raise ValueError(f"Invalid type of metric: {type(metric)} for {metric!r}")
