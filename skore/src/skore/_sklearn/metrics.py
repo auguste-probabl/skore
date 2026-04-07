@@ -726,12 +726,13 @@ class MetricRegistry(UserDict):
                     "callable. Pass it directly or through `metric_kwargs`."
                 )
 
+            selected = _select_kwargs(metric, metric_kwargs)
             result = make_metric(
                 metric,
                 response_method=metric_kwargs["response_method"],
+                kwargs=selected,
             )
             result.greater_is_better = metric_kwargs.get("greater_is_better")
-            result.kwargs = _select_kwargs(metric, metric_kwargs)
             return result
         else:
             raise ValueError(f"Invalid type of metric: {type(metric)} for {metric!r}")

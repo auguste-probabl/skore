@@ -62,7 +62,7 @@ def test_custom_metric(linear_regression_with_test):
     estimator, X_test, y_test = linear_regression_with_test
     report = EstimatorReport(estimator, X_test=X_test, y_test=y_test)
 
-    def custom_metric(y_true, y_pred, threshold=0.5):
+    def custom_metric(y_true, y_pred, threshold):
         residuals = y_true - y_pred
         return np.mean(np.where(residuals < threshold, residuals, 1))
 
@@ -109,7 +109,7 @@ def test_custom_metric_scorer(linear_regression_with_test):
     estimator, X_test, y_test = linear_regression_with_test
     report = EstimatorReport(estimator, X_test=X_test, y_test=y_test)
 
-    def custom_metric(y_true, y_pred, threshold=0.5):
+    def custom_metric(y_true, y_pred, threshold):
         residuals = y_true - y_pred
         return np.mean(np.where(residuals < threshold, residuals, 1))
 

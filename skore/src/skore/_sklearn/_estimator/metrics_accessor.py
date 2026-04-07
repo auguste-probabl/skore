@@ -859,7 +859,7 @@ class _MetricsAccessor(_BaseAccessor[EstimatorReport], DirNamesMixin):
         """
         metric = self._parent._metric_registry.check_metric(
             metric_function,
-            {"response_method": response_method},
+            {"response_method": response_method, **kwargs},
         )
         return metric(report=self._parent, data_source=data_source, **kwargs)
 
