@@ -17,7 +17,7 @@ from skore._sklearn._plot.metrics import (
     PredictionErrorDisplay,
     RocCurveDisplay,
 )
-from skore._sklearn.types import Aggregate
+from skore._sklearn.types import Aggregate, MetricLike
 from skore._utils._accessor import (
     _check_any_sub_report_has_metric,
     _check_supported_ml_task,
@@ -37,68 +37,13 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
     def __init__(self, parent: ComparisonReport) -> None:
         super().__init__(parent)
 
-    def _fan_out_metric(
-        self,
-        method_name: str,
-        *,
-        data_source: DataSource = "test",
-        aggregate: Aggregate | None = ("mean", "std"),
-        **kwargs: Any,
-    ) -> pd.DataFrame:
-        """Call an individual metric method on each sub-report and aggregate.
-
-        Parameters
-        ----------
-        method_name : str
-            The name of the metric method on the sub-report accessor.
-        data_source : {"test", "train", "both"}, default="test"
-            The data source to use.
-        aggregate : {"mean", "std"}, list of such str or None
-            Aggregation functions.
-        **kwargs
-            Additional keyword arguments forwarded to the metric method.
-        """
-        parallel = joblib.Parallel(
-            **_validate_joblib_parallel_params(
-                n_jobs=self._parent.n_jobs, return_as="generator"
-            )
-        )
-
-        results = [
-            result.data
-            for result in track(
-                parallel(
-                    joblib.delayed(report.metrics.summarize)(
-                        data_source=data_source,
-                        metric=[method_name],
-                    )
-                    for report in self._parent.reports_.values()
-                ),
-                description=f"Compute {method_name} for each estimator",
-                total=len(self._parent.reports_),
-            )
-        ]
-
-        data = pd.concat(
-            [
-                df.assign(estimator_name=estimator_name)
-                for df, estimator_name in zip(
-                    results, self._parent.reports_.keys(), strict=True
-                )
-            ],
-            axis="index",
-        )
-
-        display = MetricsSummaryDisplay(
-            data=data, report_type=self._parent._report_type
-        )
-        return display.frame(aggregate=aggregate)
-
     def summarize(
         self,
         *,
         data_source: DataSource = "test",
-        metric: str | list[str] | None = None,
+        metric: MetricLike | list[MetricLike] | dict[str, MetricLike] | None = None,
+        metric_kwargs: dict[str, Any] | None = None,
+        response_method: str | list[str] | None = None,
     ) -> MetricsSummaryDisplay:
         """Report a set of metrics for the estimators.
 
@@ -112,10 +57,31 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
             - "both" : use both the train and test sets to compute the metrics and
               present them side-by-side.
 
-        metric : str or list of str, default=None
-            The metrics to report, specified by name.  Names must match keys
-            in the metric registry (see ``report.metrics.registry``).
-            If ``None``, all metrics in the registry are reported.
+        metric : str, callable, scorer, or list of such instances or dict of such \
+            instances, default=None
+            The metrics to report. The possible values (whether or not in a list) are:
+
+            - if a string, either one of the built-in metrics or a scikit-learn scorer
+              name. You can get the possible list of string using
+              `report.metrics.help()` or :func:`sklearn.metrics.get_scorer_names` for
+              the built-in metrics or the scikit-learn scorers, respectively.
+            - if a callable, it should take as arguments `y_true`, `y_pred` as the two
+              first arguments. Additional arguments can be passed as keyword arguments
+              and will be forwarded with `metric_kwargs`. No favorability indicator can
+              be displayed in this case.
+            - if the callable API is too restrictive (e.g. need to pass
+              same parameter name with different values), you can use scikit-learn
+              scorers as provided by :func:`sklearn.metrics.make_scorer`. In this case,
+              the metric favorability will only be displayed if it is given explicitly
+              via `make_scorer`'s `greater_is_better` parameter.
+
+        metric_kwargs : dict, default=None
+            The keyword arguments to pass to the metric functions.
+
+        response_method : {"predict", "predict_proba", "predict_log_proba", \
+            "decision_function"} or list of such str, default=None
+            The estimator's method to be invoked to get the predictions. Only necessary
+            for custom metrics.
 
         Returns
         -------
@@ -154,6 +120,8 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
                     joblib.delayed(report.metrics.summarize)(
                         data_source=data_source,
                         metric=metric,
+                        metric_kwargs=metric_kwargs,
+                        response_method=response_method,
                     )
                     for report in self._parent.reports_.values()
                 ),
@@ -364,9 +332,11 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
         Precision                 0               0.90...               0.90...
                                   1               0.98...               0.98...
         """
-        return self._fan_out_metric(
-            "precision",
+        return self.summarize(
+            metric=["precision"],
             data_source=data_source,
+            metric_kwargs={"average": average},
+        ).frame(
             aggregate=aggregate,
         )
 
@@ -442,9 +412,11 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
         Recall                    0              0.978...              0.978...
                                   1              0.925...              0.925...
         """
-        return self._fan_out_metric(
-            "recall",
+        return self.summarize(
+            metric=["recall"],
             data_source=data_source,
+            metric_kwargs={"average": average},
+        ).frame(
             aggregate=aggregate,
         )
 
@@ -573,9 +545,11 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
         Metric
         ROC AUC                     0.99...               0.99...
         """
-        return self._fan_out_metric(
-            "roc_auc",
+        return self.summarize(
+            metric=["roc_auc"],
             data_source=data_source,
+            metric_kwargs={"average": average, "multi_class": multi_class},
+        ).frame(
             aggregate=aggregate,
         )
 
@@ -679,9 +653,11 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
         Metric
         R²            0.34...    0.34...
         """
-        return self._fan_out_metric(
-            "r2",
+        return self.summarize(
+            metric=["r2"],
             data_source=data_source,
+            metric_kwargs={"multioutput": multioutput},
+        ).frame(
             aggregate=aggregate,
         )
 
@@ -737,9 +713,11 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
         Metric
         RMSE          58.132...     58.132...
         """
-        return self._fan_out_metric(
-            "rmse",
+        return self.summarize(
+            metric=["rmse"],
             data_source=data_source,
+            metric_kwargs={"multioutput": multioutput},
+        ).frame(
             aggregate=aggregate,
         )
 
@@ -816,23 +794,17 @@ class _MetricsAccessor(_BaseAccessor[ComparisonReport], DirNamesMixin):
         Metric
         MAE           46.56...     46.56...
         """
-        # Register the custom metric on all leaf EstimatorReports, then summarize.
+        # create a scorer with `greater_is_better=True` to not alter the output of
+        # `metric_function`
         scorer = make_scorer(
             metric_function,
             greater_is_better=True,
             response_method=response_method,
             **kwargs,
         )
-        for report in self._parent.reports_.values():
-            if hasattr(report, "estimator_reports_"):
-                # CrossValidationReport
-                for er in report.estimator_reports_:
-                    er.metrics.register(scorer, name=metric_name)
-            else:
-                report.metrics.register(scorer, name=metric_name)
-        name = metric_name if metric_name is not None else metric_function.__name__
+        metric = {metric_name: scorer} if metric_name is not None else [scorer]
         return self.summarize(
-            metric=[name],
+            metric=metric,
             data_source=data_source,
         ).frame(
             aggregate=aggregate,
