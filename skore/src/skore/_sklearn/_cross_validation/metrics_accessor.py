@@ -17,7 +17,7 @@ from skore._sklearn._plot import (
     PredictionErrorDisplay,
     RocCurveDisplay,
 )
-from skore._sklearn.types import Aggregate, MetricLike
+from skore._sklearn.types import Aggregate
 from skore._utils._accessor import _check_estimator_report_has_method
 from skore._utils._fixes import _validate_joblib_parallel_params
 from skore._utils._parallel import delayed
@@ -35,13 +35,115 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
     def __init__(self, parent: CrossValidationReport) -> None:
         super().__init__(parent)
 
+    def _fan_out_metric(
+        self,
+        method_name: str,
+        *,
+        data_source: DataSource = "test",
+        aggregate: Aggregate | None = ("mean", "std"),
+        flat_index: bool = False,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Call an individual metric method on each sub-report and aggregate.
+
+        Parameters
+        ----------
+        method_name : str
+            The name of the metric method on the estimator accessor
+            (e.g. ``"precision"``).
+        data_source : {"test", "train"}, default="test"
+            The data source to use.
+        aggregate : {"mean", "std"}, list of such str or None
+            Aggregation functions across splits.
+        flat_index : bool, default=False
+            Whether to flatten the index.
+        **kwargs
+            Additional keyword arguments forwarded to the metric method
+            (e.g. ``average="macro"``).
+        """
+        parallel = Parallel(
+            **_validate_joblib_parallel_params(
+                n_jobs=self._parent.n_jobs, return_as="generator"
+            )
+        )
+
+        scores = list(
+            track(
+                parallel(
+                    delayed(getattr(report.metrics, method_name))(
+                        data_source=data_source, **kwargs
+                    )
+                    for report in self._parent.estimator_reports_
+                ),
+                description=f"Compute {method_name} for each split",
+                total=len(self._parent.estimator_reports_),
+            )
+        )
+
+        all_rows = []
+        for split_idx, (report, score) in enumerate(
+            zip(self._parent.estimator_reports_, scores, strict=True)
+        ):
+            metric_obj = report._metric_registry[method_name]
+            call_kwargs = kwargs or metric_obj.kwargs
+            ml_task = report._ml_task
+            pos_label = report.pos_label
+
+            row = {
+                "metric": metric_obj.verbose_name,
+                "estimator_name": report.estimator_name_,
+                "data_source": data_source,
+                "favorability": metric_obj.icon,
+                "label": None,
+                "average": None,
+                "output": None,
+                "score": score,
+            }
+
+            split_rows: list[dict] = []
+            if (
+                ml_task == "binary-classification"
+                and call_kwargs.get("average") == "binary"
+            ):
+                split_rows.append({**row, "label": pos_label})
+            elif ml_task in (
+                "binary-classification",
+                "multiclass-classification",
+            ):
+                if isinstance(score, dict):
+                    split_rows.extend(
+                        {**row, "label": label, "score": score[label]}
+                        for label in score
+                    )
+                else:
+                    split_rows.append({**row, "average": call_kwargs.get("average")})
+            elif ml_task == "multioutput-regression":
+                if isinstance(score, list):
+                    for output_idx, output_score in enumerate(score):
+                        split_rows.append(
+                            {**row, "output": output_idx, "score": output_score}
+                        )
+                else:
+                    split_rows.append(
+                        {**row, "average": call_kwargs.get("multioutput")}
+                    )
+            else:
+                split_rows.append(row)
+
+            for r in split_rows:
+                r["split"] = split_idx
+            all_rows.extend(split_rows)
+
+        data = pd.DataFrame(all_rows)
+
+        display = MetricsSummaryDisplay(data=data, report_type="cross-validation")
+        return display.frame(aggregate=aggregate, flat_index=flat_index)
+
     def summarize(
         self,
         *,
         data_source: DataSource = "test",
-        metric: MetricLike | list[MetricLike] | dict[str, MetricLike] | None = None,
-        metric_kwargs: dict[str, Any] | None = None,
-        response_method: str | list[str] | None = None,
+        metric: str | list[str] | None = None,
     ) -> MetricsSummaryDisplay:
         """Report a set of metrics for our estimator.
 
@@ -53,35 +155,10 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
             - "test" : use the test set provided when creating the report.
             - "train" : use the train set provided when creating the report.
 
-        metric : str, callable, scorer, or list of such instances or dict of such \
-            instances, default=None
-            The metric(s) to report. The possible values are:
-
-            - if a string, either one of the built-in metrics or a scikit-learn scorer
-              name. You can get the possible list of string using
-              `report.metrics.help()` or :func:`sklearn.metrics.get_scorer_names` for
-              the built-in metrics or the scikit-learn scorers, respectively.
-            - if a callable, it should take as arguments `y_true`, `y_pred` as the two
-              first arguments. Additional arguments can be passed as keyword arguments
-              and will be forwarded with `metric_kwargs`. No favorability indicator can
-              be displayed in this case.
-            - if the callable API is too restrictive (e.g. need to pass
-              same parameter name with different values), you can use scikit-learn
-              scorers as provided by :func:`sklearn.metrics.make_scorer`. In this case,
-              the metric favorability will only be displayed if it is given explicitly
-              via `make_scorer`'s `greater_is_better` parameter.
-            - if a dict, the keys are used as metric names and the values are the
-              metric functions (strings, callables, or scorers as described above).
-            - if a list, each element can be any of the above types (strings, callables,
-              scorers).
-
-        metric_kwargs : dict, default=None
-            The keyword arguments to pass to the metric functions.
-
-        response_method : {"predict", "predict_proba", "predict_log_proba", \
-            "decision_function"} or list of such str, default=None
-            The estimator's method to be invoked to get the predictions. Only necessary
-            for custom metrics.
+        metric : str or list of str, default=None
+            The metrics to report, specified by name.  Names must match keys
+            in the metric registry (see ``report.metrics.registry``).
+            If ``None``, all metrics in the registry are reported.
 
         Returns
         -------
@@ -125,8 +202,6 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
                     delayed(report.metrics.summarize)(
                         data_source=data_source,
                         metric=metric,
-                        metric_kwargs=metric_kwargs,
-                        response_method=response_method,
                     )
                     for report in self._parent.estimator_reports_
                 ),
@@ -324,11 +399,13 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
         Precision 0                         0.93...  0.04...
                   1                         0.94...  0.02...
         """
-        return self.summarize(
-            metric=["precision"],
+        return self._fan_out_metric(
+            "precision",
             data_source=data_source,
-            metric_kwargs={"average": average},
-        ).frame(aggregate=aggregate, flat_index=flat_index)
+            aggregate=aggregate,
+            flat_index=flat_index,
+            average=average,
+        )
 
     @available_if(_check_estimator_report_has_method("metrics", "recall"))
     def recall(
@@ -405,13 +482,12 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
         Recall 0                         0.91...  0.04...
                1                         0.96...  0.02...
         """
-        return self.summarize(
-            metric=["recall"],
+        return self._fan_out_metric(
+            "recall",
             data_source=data_source,
-            metric_kwargs={"average": average},
-        ).frame(
             aggregate=aggregate,
             flat_index=flat_index,
+            average=average,
         )
 
     @available_if(_check_estimator_report_has_method("metrics", "brier_score"))
@@ -542,11 +618,14 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
         Metric
         ROC AUC           0.98...  0.00...
         """
-        return self.summarize(
-            metric=["roc_auc"],
+        return self._fan_out_metric(
+            "roc_auc",
             data_source=data_source,
-            metric_kwargs={"average": average, "multi_class": multi_class},
-        ).frame(aggregate=aggregate, flat_index=flat_index)
+            aggregate=aggregate,
+            flat_index=flat_index,
+            average=average,
+            multi_class=multi_class,
+        )
 
     @available_if(_check_estimator_report_has_method("metrics", "log_loss"))
     def log_loss(
@@ -652,11 +731,13 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
         Metric
         R²      0.37...  0.02...
         """
-        return self.summarize(
-            metric=["r2"],
+        return self._fan_out_metric(
+            "r2",
             data_source=data_source,
-            metric_kwargs={"multioutput": multioutput},
-        ).frame(aggregate=aggregate, flat_index=flat_index)
+            aggregate=aggregate,
+            flat_index=flat_index,
+            multioutput=multioutput,
+        )
 
     @available_if(_check_estimator_report_has_method("metrics", "rmse"))
     def rmse(
@@ -713,11 +794,13 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
         Metric
         RMSE    60.7...  1.0...
         """
-        return self.summarize(
-            metric=["rmse"],
+        return self._fan_out_metric(
+            "rmse",
             data_source=data_source,
-            metric_kwargs={"multioutput": multioutput},
-        ).frame(aggregate=aggregate, flat_index=flat_index)
+            aggregate=aggregate,
+            flat_index=flat_index,
+            multioutput=multioutput,
+        )
 
     def custom_metric(
         self,
@@ -795,17 +878,18 @@ class _MetricsAccessor(_BaseAccessor[CrossValidationReport], DirNamesMixin):
         Metric
         MAE     51.4...  1.7...
         """
-        # create a scorer with `greater_is_better=True` to not alter the output of
-        # `metric_function`
+        # Register the custom metric on all sub-reports, then summarize by name.
         scorer = make_scorer(
             metric_function,
             greater_is_better=True,
             response_method=response_method,
             **kwargs,
         )
-        metric = {metric_name: scorer} if metric_name is not None else [scorer]
+        for report in self._parent.estimator_reports_:
+            report.metrics.register(scorer, name=metric_name)
+        name = metric_name if metric_name is not None else metric_function.__name__
         return self.summarize(
-            metric=metric,
+            metric=[name],
             data_source=data_source,
         ).frame(aggregate=aggregate, flat_index=flat_index)
 
