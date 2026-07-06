@@ -85,24 +85,6 @@ def MockDatetime(mock_now):
     return MockDatetime
 
 
-@pytest.fixture(scope="session")
-def pyplot():
-    """Setup and teardown fixture for matplotlib.
-
-    This fixture closes the figures before and after running the functions.
-
-    Returns
-    -------
-    pyplot : module
-        The ``matplotlib.pyplot`` module.
-    """
-    from matplotlib import pyplot
-
-    pyplot.close("all")
-    yield pyplot
-    pyplot.close("all")
-
-
 @pytest.fixture
 def binary_classification_data():
     return make_classification(random_state=42, n_features=4)
