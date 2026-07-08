@@ -1,6 +1,21 @@
 """Top-level conftest applying to both `tests/` and doctests under `src/`."""
 
+import matplotlib
 import matplotlib.pyplot as plt
+
+from skore import configuration
+
+
+def pytest_configure(config):
+    """Set up global test configuration.
+
+    Some of these could be set in fixtures, but doctests do not run fixtures.
+    """
+    matplotlib.use("agg")
+
+    # Disable progress bars during tests to avoid rich interfering with
+    # doctest stdout capture.
+    configuration.show_progress = False
 
 
 def pytest_runtest_teardown(item):

@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 
-import matplotlib
 import numpy as np
 import pytest
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
@@ -20,22 +19,9 @@ from skore import (
     ComparisonReport,
     CrossValidationReport,
     EstimatorReport,
-    configuration,
 )
 from skore._config import LocalConfiguration
 from skore._externals._sklearn_compat import validate_data
-
-
-def pytest_configure(config):
-    """Set up global test configuration.
-
-    Some of these could be set in fixtures, but doctests do not run fixtures.
-    """
-    matplotlib.use("agg")
-
-    # Disable progress bars during tests to avoid rich interfering with
-    # doctest stdout capture.
-    configuration.show_progress = False
 
 
 @pytest.fixture(autouse=True)
