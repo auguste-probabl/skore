@@ -1,9 +1,9 @@
 """Top-level conftest applying to both `tests/` and doctests under `src/`."""
 
 import matplotlib
-import matplotlib.pyplot as plt
+import matplotlib.pyplot
 
-from skore import configuration
+import skore
 
 
 def pytest_configure(config):
@@ -15,7 +15,7 @@ def pytest_configure(config):
 
     # Disable progress bars during tests to avoid rich interfering with
     # doctest stdout capture.
-    configuration.show_progress = False
+    skore.configuration.show_progress = False
 
 
 def pytest_runtest_teardown(item):
@@ -25,4 +25,4 @@ def pytest_runtest_teardown(item):
     trip matplotlib's `figure.max_open_warning`). Applied via a hook rather
     than an autouse fixture so it also covers doctests.
     """
-    plt.close("all")
+    matplotlib.pyplot.close("all")
