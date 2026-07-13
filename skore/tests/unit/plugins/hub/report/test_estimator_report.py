@@ -241,7 +241,6 @@ class TestEstimatorReportPayload:
             TableReportTest,
             TableReportTrain,
         ]
-        breakpoint()
 
     @mark.respx()
     def test_model_dump(self, binary_classification, payload):
